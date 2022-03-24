@@ -12,7 +12,6 @@ import android.content.Intent;
 import android.os.Build;
 import android.util.Log;
 
-import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CordovaWebView;
@@ -20,6 +19,11 @@ import org.apache.cordova.CordovaWebView;
 import android.content.pm.PackageManager;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 
 public class Migration extends CordovaPlugin {
 
@@ -105,6 +109,8 @@ public class Migration extends CordovaPlugin {
     }
 
     private void migrateData(){
+        this.clearCache();
+
         XWalkRoot = constructFilePaths(appRoot, XwalkPath);
 
         webviewRoot = constructFilePaths(appRoot, getWebviewPath());
@@ -136,16 +142,45 @@ public class Migration extends CordovaPlugin {
 
     private void moveDirFromXWalkToWebView(String dirName){
         File XWalkLocalStorageDir = constructFilePaths(XWalkRoot, dirName);
-        File webviewLocalStorageDir = constructFilePaths(webviewRoot, dirName);
-        XWalkLocalStorageDir.renameTo(webviewLocalStorageDir);
+        //File webviewLocalStorageDir = constructFilePaths(webviewRoot, dirName);
+        File bkpDir = constructFilePaths(appRoot, "files/"+dirName);
+        XWalkLocalStorageDir.renameTo(bkpDir);
     }
 
     private void moveDirFromXWalkToWebView(String sourceDirName, String targetDirName){
         File XWalkLocalStorageDir = constructFilePaths(XWalkRoot, sourceDirName);
-        File webviewLocalStorageDir = constructFilePaths(webviewRoot, targetDirName);
-        XWalkLocalStorageDir.renameTo(webviewLocalStorageDir);
+        // File webviewLocalStorageDir = constructFilePaths(webviewRoot, targetDirName);
+        File bkpDir = constructFilePaths(appRoot, "files/"+targetDirName);
+        File target_localstoragedb = constructFilePaths(constructFilePaths(appRoot, "databases"), "localstoragedb");
+        for (File source_localstoragedb : XWalkLocalStorageDir.listFiles((dir, name) -> name.toLowerCase().endsWith(".localstorage"))) {
+            try {
+                if(target_localstoragedb.exists()){
+                    target_localstoragedb.delete();
+                }
+                this.copyFileUsingStream(source_localstoragedb, target_localstoragedb);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        XWalkLocalStorageDir.renameTo(bkpDir);
     }
 
+    private static void copyFileUsingStream(File source, File dest) throws IOException {
+        InputStream is = null;
+        OutputStream os = null;
+        try {
+            is = new FileInputStream(source);
+            os = new FileOutputStream(dest);
+            byte[] buffer = new byte[1024];
+            int length;
+            while ((length = is.read(buffer)) > 0) {
+                os.write(buffer, 0, length);
+            }
+        } finally {
+            is.close();
+            os.close();
+        }
+    }
 
     private String getWebviewPath(){
         if(isModernAndroid){
@@ -276,4 +311,19 @@ public class Migration extends CordovaPlugin {
         Log.e(TAG, msg);
     }
 
+    public void clearCache() {
+        final Migration self = this;
+        final String MESSAGE_ERROR = "Error while clearing webview cache. ";
+
+        cordova.getActivity().runOnUiThread(new Runnable() {
+            public void run() {
+                try {
+                    // clear the cache
+                    self.webView.clearCache();
+                } catch (Exception e) {
+                    logError(MESSAGE_ERROR + e.getMessage());
+                }
+            }
+        });
+    }
 }
